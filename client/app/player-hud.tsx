@@ -9,6 +9,15 @@ const playerVitals = [
 
 const bagId = "player-bag";
 
+export type Position = { x: number; y: number };
+
+const directions = [
+  { direction: "north", delta: { x: 0, y: 1 } },
+  { direction: "west", delta: { x: -1, y: 0 } },
+  { direction: "east", delta: { x: 1, y: 0 } },
+  { direction: "south", delta: { x: 0, y: -1 } },
+] as const;
+
 function InventorySlots({ capacity, label }: { capacity: number; label: string }) {
   return (
     <ul className="inventory-slots" aria-label={label} role="list">
@@ -24,11 +33,13 @@ function InventorySlots({ capacity, label }: { capacity: number; label: string }
 type PlayerHudProps = {
   headingRef: Ref<HTMLHeadingElement>;
   persisted: boolean;
+  position: Position;
+  onMove: (delta: Position) => void;
   onMenu: () => void;
   onClickSound: () => void;
 };
 
-export function PlayerHud({ headingRef, persisted, onMenu, onClickSound }: PlayerHudProps) {
+export function PlayerHud({ headingRef, persisted, position, onMove, onMenu, onClickSound }: PlayerHudProps) {
   return (
     <section className="player-hud" aria-labelledby="player-title">
       <h1 id="player-title" className="sr-only" ref={headingRef} tabIndex={-1}>
@@ -50,11 +61,30 @@ export function PlayerHud({ headingRef, persisted, onMenu, onClickSound }: Playe
         <button className="back-button" onClick={onMenu}>Main Menu</button>
       </div>
 
-      {!persisted && (
-        <p className="screen-message hud-message" role="status">
-          This browser couldn’t save your game.
-        </p>
-      )}
+      <div className="map-area">
+        <nav className="map-navigation" aria-label="Map movement">
+          {directions.map(({ direction, delta }) => (
+            <button
+              key={direction}
+              type="button"
+              className="back-button map-arrow"
+              data-direction={direction}
+              style={{ gridArea: direction }}
+              aria-label={"Move " + direction}
+              onClick={() => onMove(delta)}
+            />
+          ))}
+          <div className="map-position">
+            <label htmlFor="map-coordinates">Coordinates</label>
+            <output id="map-coordinates">({position.x}, {position.y})</output>
+          </div>
+        </nav>
+        {!persisted && (
+          <p className="screen-message" role="status">
+            This browser couldn’t save your game.
+          </p>
+        )}
+      </div>
 
       <div className="hud-bottom">
         <InventorySlots capacity={4} label="Inventory" />

@@ -1,25 +1,28 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { PlayerHud } from "./player-hud";
+import { useGameMusic } from "./game-music";
+import { PlayerHud, type Position } from "./player-hud";
 
 const saveKey = "the-click:save";
 const saveChanged = "the-click:save-changed";
-const startingPoint = "Starting Point";
+const origin: Position = { x: 0, y: 0 };
 
 type Save = {
-  checkpoint: typeof startingPoint;
+  position: Position;
   savedAt: number;
 };
 
 type Screen =
-  | { kind: "menu" | "new" | "load" | "resume" }
-  | { kind: "player"; persisted: boolean };
+  | { kind: "menu" | "new" | "load" | "options" }
+  | { kind: "resume"; position: Position }
+  | { kind: "player"; position: Position; persisted: boolean };
 
 const screenTitles = {
   menu: "The Click",
   new: "New Game",
   load: "Load Game",
+  options: "Options",
   resume: "Start Game",
 };
 
@@ -44,13 +47,18 @@ function parseSave(value: string | null): Save | null {
   if (value === null) return null;
 
   try {
-    const save = JSON.parse(value) as Partial<Save> | null;
-    if (
-      save?.checkpoint === startingPoint &&
-      typeof save.savedAt === "number" &&
-      Number.isFinite(new Date(save.savedAt).getTime())
-    ) {
-      return { checkpoint: save.checkpoint, savedAt: save.savedAt };
+    const save = JSON.parse(value) as (Partial<Save> & { checkpoint?: string }) | null;
+    if (typeof save?.savedAt !== "number" || !Number.isFinite(new Date(save.savedAt).getTime())) {
+      return null;
+    }
+
+    const position = save.position;
+    if (position && Number.isSafeInteger(position.x) && Number.isSafeInteger(position.y)) {
+      return { position, savedAt: save.savedAt };
+    }
+
+    if (position === undefined && save.checkpoint === "Starting Point") {
+      return { position: origin, savedAt: save.savedAt };
     }
   } catch {
     return null;
@@ -59,23 +67,37 @@ function parseSave(value: string | null): Save | null {
   return null;
 }
 
+function savePosition(position: Position) {
+  const save: Save = { position, savedAt: Date.now() };
+
+  try {
+    window.localStorage.setItem(saveKey, JSON.stringify(save));
+    window.dispatchEvent(new Event(saveChanged));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export default function Home() {
   const [screen, setScreen] = useState<Screen>({ kind: "menu" });
+  const { musicRef, startMusic, musicVolume, changeMusicVolume } = useGameMusic();
   const save = parseSave(useSyncExternalStore(subscribeToSave, readSave, () => null));
   const headingRef = useRef<HTMLHeadingElement>(null);
   const clickSoundRef = useRef<HTMLAudioElement>(null);
   const newGameRef = useRef<HTMLButtonElement>(null);
   const loadGameRef = useRef<HTMLButtonElement>(null);
+  const optionsRef = useRef<HTMLButtonElement>(null);
   const restoreFocus = useRef(false);
-  const lastChoice = useRef<"new" | "load">("new");
+  const lastChoice = useRef<"new" | "load" | "options">("new");
 
   useEffect(() => {
     if (!restoreFocus.current) return;
     restoreFocus.current = false;
 
     if (screen.kind === "menu") {
-      const choiceRef = lastChoice.current === "new" ? newGameRef : loadGameRef;
-      choiceRef.current?.focus();
+      const menuButtons = { new: newGameRef, load: loadGameRef, options: optionsRef };
+      menuButtons[lastChoice.current].current?.focus();
     } else {
       headingRef.current?.focus({ preventScroll: true });
     }
@@ -97,33 +119,38 @@ export default function Home() {
     setScreen(next);
   }
 
-  function choose(kind: "new" | "load") {
+  function choose(kind: "new" | "load" | "options") {
     lastChoice.current = kind;
     goTo({ kind });
   }
 
   function startNewGame() {
-    const nextSave: Save = { checkpoint: startingPoint, savedAt: Date.now() };
-    let persisted = false;
+    goTo({ kind: "player", position: origin, persisted: savePosition(origin) });
+  }
 
-    try {
-      window.localStorage.setItem(saveKey, JSON.stringify(nextSave));
-      persisted = true;
-      window.dispatchEvent(new Event(saveChanged));
-    } catch {
-      // The player screen remains available when local storage is blocked.
-    }
+  function move(delta: Position) {
+    if (screen.kind !== "player") return;
 
-    goTo({ kind: "player", persisted });
+    const position = {
+      x: screen.position.x + delta.x,
+      y: screen.position.y + delta.y,
+    };
+    if (!Number.isSafeInteger(position.x) || !Number.isSafeInteger(position.y)) return;
+
+    playClickSound();
+    setScreen({ kind: "player", position, persisted: savePosition(position) });
   }
 
   return (
-    <main className={screen.kind === "player" ? undefined : "game-stage"}>
+    <main className={screen.kind === "player" ? undefined : "game-stage"} onClickCapture={startMusic}>
       <audio ref={clickSoundRef} src="/click.wav" preload="auto" />
+      <audio ref={musicRef} src="/retro-loop.mp3" preload="metadata" loop />
       {screen.kind === "player" ? (
         <PlayerHud
           headingRef={headingRef}
           persisted={screen.persisted}
+          position={screen.position}
+          onMove={move}
           onMenu={() => goTo({ kind: "menu" })}
           onClickSound={playClickSound}
         />
@@ -159,6 +186,9 @@ export default function Home() {
                   Load Game
                   <span className="button-symbol save-symbol" aria-hidden="true" />
                 </button>
+                <button className="game-button" onClick={() => choose("options")} ref={optionsRef}>
+                  Options
+                </button>
               </>
             )}
 
@@ -175,7 +205,7 @@ export default function Home() {
 
             {screen.kind === "load" && (
               save ? (
-                <button className="game-button save-slot" onClick={() => goTo({ kind: "resume" })}>
+                <button className="game-button save-slot" onClick={() => goTo({ kind: "resume", position: save.position })}>
                   <span>Saved Game</span>
                   <span className="slot-date">
                     Saved {new Date(save.savedAt).toLocaleDateString()}
@@ -194,10 +224,28 @@ export default function Home() {
             {screen.kind === "resume" && (
               <button
                 className="game-button primary-button"
-                onClick={() => goTo({ kind: "player", persisted: true })}
+                onClick={() => goTo({ kind: "player", position: screen.position, persisted: true })}
               >
                 Start Game
               </button>
+            )}
+
+            {screen.kind === "options" && (
+              <div className="volume-setting">
+                <div className="volume-heading">
+                  <label htmlFor="music-volume">Music Volume</label>
+                  <span aria-hidden="true">{musicVolume}%</span>
+                </div>
+                <input
+                  id="music-volume"
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={musicVolume}
+                  aria-valuetext={musicVolume + "%"}
+                  onChange={(event) => changeMusicVolume(event.currentTarget.valueAsNumber)}
+                />
+              </div>
             )}
 
             {screen.kind !== "menu" && (
