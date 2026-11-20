@@ -27,8 +27,12 @@
 
 ## Project setup
 
+From the `server` directory, use Node.js 24.15.0 or later in the 24.x series. If you use nvm, run `nvm install` and `nvm use` to select Node.js 24.
+
+Install the server dependencies, including the Node.js type definitions, before starting the app.
+
 ```bash
-$ npm install
+$ npm ci
 ```
 
 ## Compile and run the project

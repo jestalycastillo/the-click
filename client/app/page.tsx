@@ -1,69 +1,219 @@
-import Image from "next/image";
+"use client";
+
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+
+const saveKey = "the-click:save";
+const saveChanged = "the-click:save-changed";
+const startingPoint = "Starting Point";
+
+type Save = {
+  checkpoint: typeof startingPoint;
+  savedAt: number;
+};
+
+type Screen =
+  | { kind: "menu" | "new" | "load" }
+  | { kind: "resume"; save: Save }
+  | { kind: "map"; save: Save; persisted: boolean };
+
+const screenTitles = {
+  menu: "The Click",
+  new: "New Game",
+  load: "Load Game",
+  resume: "Start Game",
+  map: "Map",
+};
+
+function subscribeToSave(onChange: () => void) {
+  window.addEventListener("storage", onChange);
+  window.addEventListener(saveChanged, onChange);
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener(saveChanged, onChange);
+  };
+}
+
+function readSave() {
+  try {
+    return window.localStorage.getItem(saveKey);
+  } catch {
+    return null;
+  }
+}
+
+function parseSave(value: string | null): Save | null {
+  if (value === null) return null;
+
+  try {
+    const save = JSON.parse(value) as Partial<Save> | null;
+    if (
+      save?.checkpoint === startingPoint &&
+      typeof save.savedAt === "number" &&
+      Number.isFinite(new Date(save.savedAt).getTime())
+    ) {
+      return { checkpoint: save.checkpoint, savedAt: save.savedAt };
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
 
 export default function Home() {
+  const [screen, setScreen] = useState<Screen>({ kind: "menu" });
+  const save = parseSave(useSyncExternalStore(subscribeToSave, readSave, () => null));
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const clickSoundRef = useRef<HTMLAudioElement>(null);
+  const newGameRef = useRef<HTMLButtonElement>(null);
+  const loadGameRef = useRef<HTMLButtonElement>(null);
+  const restoreFocus = useRef(false);
+  const lastChoice = useRef<"new" | "load">("new");
+
+  useEffect(() => {
+    if (!restoreFocus.current) return;
+    restoreFocus.current = false;
+
+    if (screen.kind === "menu") {
+      const choiceRef = lastChoice.current === "new" ? newGameRef : loadGameRef;
+      choiceRef.current?.focus();
+    } else {
+      headingRef.current?.focus();
+    }
+  }, [screen.kind]);
+
+  function goTo(next: Screen) {
+    const clickSound = clickSoundRef.current;
+    if (clickSound) {
+      clickSound.currentTime = 0;
+      void clickSound.play().catch(() => {
+        // Audio playback is optional when the browser blocks it.
+      });
+    }
+    restoreFocus.current = true;
+    setScreen(next);
+  }
+
+  function choose(kind: "new" | "load") {
+    lastChoice.current = kind;
+    goTo({ kind });
+  }
+
+  function startNewGame() {
+    const nextSave: Save = { checkpoint: startingPoint, savedAt: Date.now() };
+    let persisted = false;
+
+    try {
+      window.localStorage.setItem(saveKey, JSON.stringify(nextSave));
+      persisted = true;
+      window.dispatchEvent(new Event(saveChanged));
+    } catch {
+      // The map remains available when local storage is blocked.
+    }
+
+    goTo({ kind: "map", save: nextSave, persisted });
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
+    <main className="game-stage">
+      <audio ref={clickSoundRef} src="/click.wav" preload="auto" />
+      <section key={screen.kind} className="game-screen" aria-labelledby="screen-title">
+        <div className="screen-heading">
+          <h1
+            id="screen-title"
+            className={screen.kind === "menu" ? "game-title" : undefined}
+            ref={headingRef}
+            tabIndex={-1}
+          >
+            {screenTitles[screen.kind]}
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        <div className="menu-controls">
+          {screen.kind === "menu" && (
+            <>
+              <button
+                className="game-button primary-button"
+                onClick={() => choose("new")}
+                ref={newGameRef}
+              >
+                New Game
+                <span className="button-symbol" aria-hidden="true">+</span>
+              </button>
+              <button
+                className="game-button"
+                onClick={() => choose("load")}
+                ref={loadGameRef}
+              >
+                Load Game
+                <span className="button-symbol save-symbol" aria-hidden="true" />
+              </button>
+            </>
+          )}
+
+          {screen.kind === "new" && (
+            <>
+              <p className="screen-message">
+                {save ? "Starting over will replace your saved game." : "Begin at the starting point."}
+              </p>
+              <button className="game-button primary-button" onClick={startNewGame}>
+                Start Game
+              </button>
+            </>
+          )}
+
+          {screen.kind === "load" && (
+            save ? (
+              <button className="game-button save-slot" onClick={() => goTo({ kind: "resume", save })}>
+                <span>{save.checkpoint}</span>
+                <span className="slot-date">
+                  Saved {new Date(save.savedAt).toLocaleDateString()}
+                </span>
+              </button>
+            ) : (
+              <>
+                <p className="screen-message">No saved game on this device.</p>
+                <button className="game-button primary-button" onClick={() => goTo({ kind: "new" })}>
+                  New Game
+                </button>
+              </>
+            )
+          )}
+
+          {screen.kind === "resume" && (
+            <>
+              <p className="screen-message">Resume at {screen.save.checkpoint}.</p>
+              <button
+                className="game-button primary-button"
+                onClick={() => goTo({ ...screen, kind: "map", persisted: true })}
+              >
+                Start Game
+              </button>
+            </>
+          )}
+
+          {screen.kind === "map" && (
+            <>
+              <div className="map-location">
+                <span className="map-label">Current checkpoint</span>
+                <span className="map-name">{screen.save.checkpoint}</span>
+              </div>
+              {!screen.persisted && (
+                <p className="screen-message" role="status">This browser couldn’t save your game.</p>
+              )}
+            </>
+          )}
+
+          {screen.kind !== "menu" && (
+            <button
+              className="back-button"
+              onClick={() => goTo({ kind: screen.kind === "resume" ? "load" : "menu" })}
+            >
+              {screen.kind === "map" ? "Main Menu" : "Back"}
+            </button>
+          )}
         </div>
-      </main>
-    </div>
+      </section>
+    </main>
   );
 }
