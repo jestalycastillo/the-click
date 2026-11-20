@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { PlayerHud } from "./player-hud";
 
 const saveKey = "the-click:save";
 const saveChanged = "the-click:save-changed";
@@ -12,16 +13,14 @@ type Save = {
 };
 
 type Screen =
-  | { kind: "menu" | "new" | "load" }
-  | { kind: "resume"; save: Save }
-  | { kind: "map"; save: Save; persisted: boolean };
+  | { kind: "menu" | "new" | "load" | "resume" }
+  | { kind: "player"; persisted: boolean };
 
 const screenTitles = {
   menu: "The Click",
   new: "New Game",
   load: "Load Game",
   resume: "Start Game",
-  map: "Map",
 };
 
 function subscribeToSave(onChange: () => void) {
@@ -78,11 +77,11 @@ export default function Home() {
       const choiceRef = lastChoice.current === "new" ? newGameRef : loadGameRef;
       choiceRef.current?.focus();
     } else {
-      headingRef.current?.focus();
+      headingRef.current?.focus({ preventScroll: true });
     }
   }, [screen.kind]);
 
-  function goTo(next: Screen) {
+  function playClickSound() {
     const clickSound = clickSoundRef.current;
     if (clickSound) {
       clickSound.currentTime = 0;
@@ -90,6 +89,10 @@ export default function Home() {
         // Audio playback is optional when the browser blocks it.
       });
     }
+  }
+
+  function goTo(next: Screen) {
+    playClickSound();
     restoreFocus.current = true;
     setScreen(next);
   }
@@ -108,112 +111,106 @@ export default function Home() {
       persisted = true;
       window.dispatchEvent(new Event(saveChanged));
     } catch {
-      // The map remains available when local storage is blocked.
+      // The player screen remains available when local storage is blocked.
     }
 
-    goTo({ kind: "map", save: nextSave, persisted });
+    goTo({ kind: "player", persisted });
   }
 
   return (
-    <main className="game-stage">
+    <main className={screen.kind === "player" ? undefined : "game-stage"}>
       <audio ref={clickSoundRef} src="/click.wav" preload="auto" />
-      <section key={screen.kind} className="game-screen" aria-labelledby="screen-title">
-        <div className="screen-heading">
-          <h1
-            id="screen-title"
-            className={screen.kind === "menu" ? "game-title" : undefined}
-            ref={headingRef}
-            tabIndex={-1}
-          >
-            {screenTitles[screen.kind]}
-          </h1>
-        </div>
+      {screen.kind === "player" ? (
+        <PlayerHud
+          headingRef={headingRef}
+          persisted={screen.persisted}
+          onMenu={() => goTo({ kind: "menu" })}
+          onClickSound={playClickSound}
+        />
+      ) : (
+        <section key={screen.kind} className="game-screen" aria-labelledby="screen-title">
+          <div className="screen-heading">
+            <h1
+              id="screen-title"
+              className={screen.kind === "menu" ? "game-title" : undefined}
+              ref={headingRef}
+              tabIndex={-1}
+            >
+              {screenTitles[screen.kind]}
+            </h1>
+          </div>
 
-        <div className="menu-controls">
-          {screen.kind === "menu" && (
-            <>
-              <button
-                className="game-button primary-button"
-                onClick={() => choose("new")}
-                ref={newGameRef}
-              >
-                New Game
-                <span className="button-symbol" aria-hidden="true">+</span>
-              </button>
-              <button
-                className="game-button"
-                onClick={() => choose("load")}
-                ref={loadGameRef}
-              >
-                Load Game
-                <span className="button-symbol save-symbol" aria-hidden="true" />
-              </button>
-            </>
-          )}
-
-          {screen.kind === "new" && (
-            <>
-              <p className="screen-message">
-                {save ? "Starting over will replace your saved game." : "Begin at the starting point."}
-              </p>
-              <button className="game-button primary-button" onClick={startNewGame}>
-                Start Game
-              </button>
-            </>
-          )}
-
-          {screen.kind === "load" && (
-            save ? (
-              <button className="game-button save-slot" onClick={() => goTo({ kind: "resume", save })}>
-                <span>{save.checkpoint}</span>
-                <span className="slot-date">
-                  Saved {new Date(save.savedAt).toLocaleDateString()}
-                </span>
-              </button>
-            ) : (
+          <div className="menu-controls">
+            {screen.kind === "menu" && (
               <>
-                <p className="screen-message">No saved game on this device.</p>
-                <button className="game-button primary-button" onClick={() => goTo({ kind: "new" })}>
+                <button
+                  className="game-button primary-button"
+                  onClick={() => choose("new")}
+                  ref={newGameRef}
+                >
                   New Game
+                  <span className="button-symbol" aria-hidden="true">+</span>
+                </button>
+                <button
+                  className="game-button"
+                  onClick={() => choose("load")}
+                  ref={loadGameRef}
+                >
+                  Load Game
+                  <span className="button-symbol save-symbol" aria-hidden="true" />
                 </button>
               </>
-            )
-          )}
+            )}
 
-          {screen.kind === "resume" && (
-            <>
-              <p className="screen-message">Resume at {screen.save.checkpoint}.</p>
+            {screen.kind === "new" && (
+              <>
+                {save && (
+                  <p className="screen-message">Starting over will replace your saved game.</p>
+                )}
+                <button className="game-button primary-button" onClick={startNewGame}>
+                  Start Game
+                </button>
+              </>
+            )}
+
+            {screen.kind === "load" && (
+              save ? (
+                <button className="game-button save-slot" onClick={() => goTo({ kind: "resume" })}>
+                  <span>Saved Game</span>
+                  <span className="slot-date">
+                    Saved {new Date(save.savedAt).toLocaleDateString()}
+                  </span>
+                </button>
+              ) : (
+                <>
+                  <p className="screen-message">No saved game on this device.</p>
+                  <button className="game-button primary-button" onClick={() => goTo({ kind: "new" })}>
+                    New Game
+                  </button>
+                </>
+              )
+            )}
+
+            {screen.kind === "resume" && (
               <button
                 className="game-button primary-button"
-                onClick={() => goTo({ ...screen, kind: "map", persisted: true })}
+                onClick={() => goTo({ kind: "player", persisted: true })}
               >
                 Start Game
               </button>
-            </>
-          )}
+            )}
 
-          {screen.kind === "map" && (
-            <>
-              <div className="map-location">
-                <span className="map-label">Current checkpoint</span>
-                <span className="map-name">{screen.save.checkpoint}</span>
-              </div>
-              {!screen.persisted && (
-                <p className="screen-message" role="status">This browser couldn’t save your game.</p>
-              )}
-            </>
-          )}
-
-          {screen.kind !== "menu" && (
-            <button
-              className="back-button"
-              onClick={() => goTo({ kind: screen.kind === "resume" ? "load" : "menu" })}
-            >
-              {screen.kind === "map" ? "Main Menu" : "Back"}
-            </button>
-          )}
-        </div>
-      </section>
+            {screen.kind !== "menu" && (
+              <button
+                className="back-button"
+                onClick={() => goTo({ kind: screen.kind === "resume" ? "load" : "menu" })}
+              >
+                Back
+              </button>
+            )}
+          </div>
+        </section>
+      )}
     </main>
   );
 }

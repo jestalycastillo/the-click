@@ -18,7 +18,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={pixelify.variable}>
-      <body>{children}</body>
+      <body className={pixelify.className}>{children}</body>
     </html>
   );
 }
