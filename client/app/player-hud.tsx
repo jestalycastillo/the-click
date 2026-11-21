@@ -1,4 +1,5 @@
 import { useRef, useState, type MouseEvent, type Ref } from "react";
+import { Barn } from "./barn";
 
 const playerVitals = [
   { name: "Health", color: "health", value: 100 },
@@ -10,7 +11,7 @@ const playerVitals = [
 const bagId = "player-bag";
 
 export type Position = { x: number; y: number };
-export type PlayerLocation = { area: "map" | "house" | "farm"; position: Position };
+export type PlayerLocation = { area: "map" | "house" | "farm" | "barn"; position: Position };
 
 export const homePosition: Position = { x: 0, y: 1 };
 export const farmPosition: Position = { x: -1, y: 1 };
@@ -53,6 +54,8 @@ type PlayerHudProps = {
   onLeaveHome: () => void;
   onEnterFarm: () => void;
   onLeaveFarm: () => void;
+  onEnterBarn: () => void;
+  onLeaveBarn: () => void;
   onHarvest: (plot: number) => void;
   onMenu: () => void;
   onClickSound: () => void;
@@ -61,13 +64,14 @@ type PlayerHudProps = {
 
 export function PlayerHud({
   headingRef, persisted, location, harvestedPlots, onMove, onEnterHome, onLeaveHome,
-  onEnterFarm, onLeaveFarm, onHarvest, onMenu, onClickSound, onBagSound,
+  onEnterFarm, onLeaveFarm, onEnterBarn, onLeaveBarn, onHarvest, onMenu, onClickSound, onBagSound,
 }: PlayerHudProps) {
   const [enteringHome, setEnteringHome] = useState(false);
   const houseVeilRef = useRef<HTMLDivElement>(null);
   const { area, position } = location;
   const insideHouse = area === "house";
   const insideFarm = area === "farm";
+  const insideBarn = area === "barn";
   const atHome = position.x === homePosition.x && position.y === homePosition.y;
   const atFarm = position.x === farmPosition.x && position.y === farmPosition.y;
 
@@ -108,7 +112,7 @@ export function PlayerHud({
   return (
     <section className="player-hud" aria-labelledby="player-title" inert={enteringHome}>
       <h1 id="player-title" className="sr-only" ref={headingRef} tabIndex={-1}>
-        {insideHouse ? "House" : insideFarm ? "Farm" : "Player"}
+        {{ map: "Player", house: "House", farm: "Farm", barn: "Barn" }[area]}
       </h1>
 
       <div className="hud-top">
@@ -129,7 +133,7 @@ export function PlayerHud({
       <div className="map-area">
         {insideHouse ? (
           <div className="house-interior">
-            <h2>House</h2>
+            <h2 className="place-title">House</h2>
             {coordinates}
             <button className="back-button" type="button" onClick={onLeaveHome}>
               Leave House
@@ -137,7 +141,7 @@ export function PlayerHud({
           </div>
         ) : insideFarm ? (
           <div className="farm-interior">
-            <h2>Farm</h2>
+            <h2 className="place-title">Farm</h2>
             <div className="farm-plots" role="group" aria-label="Crop plots">
               {Array.from({ length: farmPlotCount }, (_, plot) => {
                 const harvested = harvestedPlots.includes(plot);
@@ -160,13 +164,16 @@ export function PlayerHud({
               Leave Farm
             </button>
           </div>
+        ) : insideBarn ? (
+          <Barn onLeave={onLeaveBarn} />
         ) : (
           <nav className="map-navigation" aria-label="Map movement">
             {directions.map(({ direction, delta }) => {
               if (direction === "north" && atHome) {
                 return (
-                  <div key={direction} className="map-home">
+                  <div key={direction} className="map-place-north">
                     <button
+                      className="map-place"
                       type="button"
                       aria-describedby={enteringHome ? undefined : "home-tooltip"}
                       onClick={enterHome}
@@ -182,9 +189,17 @@ export function PlayerHud({
                 );
               }
 
+              if (direction === "north" && atFarm) {
+                return (
+                  <div key={direction} className="map-place-north">
+                    <button className="map-place" type="button" onClick={onEnterBarn}>Barn</button>
+                  </div>
+                );
+              }
+
               if (direction === "west" && atFarm) {
                 return (
-                  <button key={direction} className="map-farm" type="button" onClick={onEnterFarm}>
+                  <button key={direction} className="map-place map-farm" type="button" onClick={onEnterFarm}>
                     Farm
                   </button>
                 );

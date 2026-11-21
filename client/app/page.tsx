@@ -55,7 +55,7 @@ function parseSave(value: string | null): Save | null {
     const position = save.position;
     if (position && Number.isSafeInteger(position.x) && Number.isSafeInteger(position.y)) {
       const area = save.area ?? "map";
-      if (area === "map" || area === "house" || area === "farm") {
+      if (area === "map" || area === "house" || area === "farm" || area === "barn") {
         const harvestedPlots = Array.isArray(save.harvestedPlots)
           ? [...new Set(save.harvestedPlots.filter((plot) => Number.isInteger(plot) && plot >= 0 && plot < farmPlotCount))]
           : [];
@@ -179,6 +179,8 @@ export default function Home() {
           onLeaveHome={() => enterLocation({ area: "map", position: homePosition })}
           onEnterFarm={() => enterLocation({ area: "farm", position: origin })}
           onLeaveFarm={() => enterLocation({ area: "map", position: farmPosition })}
+          onEnterBarn={() => enterLocation({ area: "barn", position: origin })}
+          onLeaveBarn={() => enterLocation({ area: "map", position: farmPosition })}
           onHarvest={harvestPlot}
           onMenu={() => goTo({ kind: "menu" })}
           onClickSound={() => playSound(clickSoundRef.current)}
