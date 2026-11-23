@@ -5,12 +5,13 @@ import { useGameMusic } from "./game-music";
 import {
   farmPlotCount, farmPosition, homePosition, PlayerHud, type PlayerLocation, type Position,
 } from "./player-hud";
+import { restoreVitals, startingVitals, vitalsAfterMove, type PlayerVitals } from "./player-vitals";
 
 const saveKey = "the-click:save";
 const saveChanged = "the-click:save-changed";
 const origin: Position = { x: 0, y: 0 };
 
-type PlayerProgress = PlayerLocation & { harvestedPlots: number[] };
+type PlayerProgress = PlayerLocation & { harvestedPlots: number[]; vitals: PlayerVitals };
 type Save = PlayerProgress & { savedAt: number };
 
 type Screen =
@@ -59,12 +60,12 @@ function parseSave(value: string | null): Save | null {
         const harvestedPlots = Array.isArray(save.harvestedPlots)
           ? [...new Set(save.harvestedPlots.filter((plot) => Number.isInteger(plot) && plot >= 0 && plot < farmPlotCount))]
           : [];
-        return { area, position, harvestedPlots, savedAt: save.savedAt };
+        return { area, position, harvestedPlots, vitals: restoreVitals(save.vitals), savedAt: save.savedAt };
       }
     }
 
     if (position === undefined && save.checkpoint === "Starting Point") {
-      return { area: "map", position: origin, harvestedPlots: [], savedAt: save.savedAt };
+      return { area: "map", position: origin, harvestedPlots: [], vitals: startingVitals, savedAt: save.savedAt };
     }
   } catch {
     return null;
@@ -133,8 +134,12 @@ export default function Home() {
   }
 
   function enterLocation(location: PlayerLocation) {
-    const harvestedPlots = screen.kind === "player" ? screen.progress.harvestedPlots : [];
-    const progress = { ...location, harvestedPlots };
+    const previous = screen.kind === "player" ? screen.progress : undefined;
+    const progress = {
+      ...location,
+      harvestedPlots: previous?.harvestedPlots ?? [],
+      vitals: previous?.vitals ?? startingVitals,
+    };
     goTo({ kind: "player", progress, persisted: saveProgress(progress) });
   }
 
@@ -148,7 +153,7 @@ export default function Home() {
     if (!Number.isSafeInteger(position.x) || !Number.isSafeInteger(position.y)) return;
 
     playSound(footstepSoundRef.current);
-    const progress = { ...screen.progress, position };
+    const progress = { ...screen.progress, position, vitals: vitalsAfterMove(screen.progress.vitals) };
     setScreen({ kind: "player", progress, persisted: saveProgress(progress) });
   }
 
@@ -163,7 +168,7 @@ export default function Home() {
   }
 
   return (
-    <main className={screen.kind === "player" ? undefined : "game-stage"} onClickCapture={startMusic}>
+    <main className={screen.kind === "player" ? "player-stage" : "game-stage"} onClickCapture={startMusic}>
       <audio ref={clickSoundRef} src="/click.wav" preload="auto" />
       <audio ref={footstepSoundRef} src="/footstep.wav" preload="auto" />
       <audio ref={bagSoundRef} src="/pouch-open.wav" preload="auto" />
@@ -173,6 +178,7 @@ export default function Home() {
           headingRef={headingRef}
           persisted={screen.persisted}
           location={screen.progress}
+          vitals={screen.progress.vitals}
           harvestedPlots={screen.progress.harvestedPlots}
           onMove={move}
           onEnterHome={() => enterLocation({ area: "house", position: origin })}

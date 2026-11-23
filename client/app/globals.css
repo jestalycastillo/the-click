@@ -209,6 +209,10 @@ button {
   text-transform: none;
 }
 
+.player-stage {
+  overflow: clip;
+}
+
 .player-hud {
   --hud-inset: clamp(1rem, 4vw, 2.25rem);
   --hotbar-slot: clamp(2.25rem, 8vw, 3.5rem);
@@ -328,16 +332,17 @@ button {
   clip-path: path("M0 0h6v3h3v3h3V3h3V0h6v3h-3v3h-3v3h-3v3H9V9H6V6H3V3H0Z");
 }
 
+.map-place-entrance {
+  position: relative;
+  z-index: 1;
+}
+
 .map-arrow[data-direction="north"],
 .map-place-north {
   position: absolute;
   inset-block-start: var(--hud-inset);
   inset-inline-start: 50%;
   translate: -50% 0;
-}
-
-.map-place-north {
-  z-index: 1;
 }
 
 .map-place {
@@ -352,6 +357,10 @@ button {
   grid-area: west;
   justify-self: start;
   inline-size: clamp(2.75rem, 9vw, 3.5rem);
+}
+
+.map-farm .map-place {
+  inline-size: 100%;
   text-align: start;
 }
 
@@ -361,7 +370,7 @@ button {
   outline-offset: 4px;
 }
 
-.map-home-tooltip {
+.map-place-tooltip {
   position: absolute;
   inset-block-start: 100%;
   inset-inline-start: 50%;
@@ -377,11 +386,11 @@ button {
   box-shadow: 0.1875rem 0.1875rem 0 #1a1815;
 }
 
-.map-home-tooltip::before {
+.map-place-tooltip::before {
   position: absolute;
   inset-block-start: -0.25rem;
   inset-inline-start: calc(50% - 0.25rem);
-  width: 0.5rem;
+  inline-size: 0.5rem;
   aspect-ratio: 1;
   rotate: 45deg;
   border-top: 1px solid var(--amber);
@@ -390,8 +399,17 @@ button {
   content: "";
 }
 
-.map-place-north:hover .map-home-tooltip,
-.map-place-north:focus-within .map-home-tooltip {
+.map-farm .map-place-tooltip {
+  inset-inline-start: 0;
+  translate: none;
+}
+
+.map-farm .map-place-tooltip::before {
+  inset-inline-start: 1.125rem;
+}
+
+.map-place-entrance:hover .map-place-tooltip,
+.map-place-entrance:focus-within .map-place-tooltip {
   visibility: visible;
 }
 
@@ -585,6 +603,15 @@ button {
   z-index: 2;
   inset: 0;
   background: radial-gradient(ellipse at 50% 10%, #2c2118, #161410 72%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.damage-vignette {
+  position: fixed;
+  z-index: 3;
+  inset: -2px;
+  background: radial-gradient(ellipse at center, transparent 50%, #bd353861 100%);
   opacity: 0;
   pointer-events: none;
 }

@@ -1,12 +1,13 @@
-import { useRef, useState, type MouseEvent, type Ref } from "react";
+import { useEffect, useId, useRef, useState, type MouseEvent, type Ref } from "react";
 import { Barn } from "./barn";
+import type { PlayerVitals } from "./player-vitals";
 
 const playerVitals = [
-  { name: "Health", color: "health", value: 100 },
-  { name: "Energy", color: "energy", value: 100 },
-  { name: "Thirst", color: "thirst", value: 100 },
-  { name: "Hunger", color: "hunger", value: 100 },
-];
+  { name: "Health", key: "health" },
+  { name: "Energy", key: "energy" },
+  { name: "Thirst", key: "thirst" },
+  { name: "Hunger", key: "hunger" },
+] as const;
 
 const bagId = "player-bag";
 
@@ -23,6 +24,27 @@ const directions = [
   { direction: "east", delta: { x: 1, y: 0 } },
   { direction: "south", delta: { x: 0, y: -1 } },
 ] as const;
+
+function PlaceEntrance({ name, side, onEnter, entering = false }: {
+  name: string;
+  side: "north" | "west";
+  onEnter: (event: MouseEvent<HTMLButtonElement>) => void;
+  entering?: boolean;
+}) {
+  const tooltipId = useId();
+  const placement = side === "west" ? "map-farm" : "map-place-north";
+
+  return (
+    <div className={"map-place-entrance " + placement}>
+      <button className="map-place" type="button" aria-describedby={entering ? undefined : tooltipId} onClick={onEnter}>
+        {name}
+      </button>
+      {!entering && (
+        <span id={tooltipId} className="map-place-tooltip" role="tooltip">Go inside?</span>
+      )}
+    </div>
+  );
+}
 
 function InventorySlots({ capacity, label, crops = 0 }: { capacity: number; label: string; crops?: number }) {
   return (
@@ -48,6 +70,7 @@ type PlayerHudProps = {
   headingRef: Ref<HTMLHeadingElement>;
   persisted: boolean;
   location: PlayerLocation;
+  vitals: PlayerVitals;
   harvestedPlots: readonly number[];
   onMove: (delta: Position) => void;
   onEnterHome: () => void;
@@ -63,17 +86,48 @@ type PlayerHudProps = {
 };
 
 export function PlayerHud({
-  headingRef, persisted, location, harvestedPlots, onMove, onEnterHome, onLeaveHome,
+  headingRef, persisted, location, vitals, harvestedPlots, onMove, onEnterHome, onLeaveHome,
   onEnterFarm, onLeaveFarm, onEnterBarn, onLeaveBarn, onHarvest, onMenu, onClickSound, onBagSound,
 }: PlayerHudProps) {
   const [enteringHome, setEnteringHome] = useState(false);
   const houseVeilRef = useRef<HTMLDivElement>(null);
+  const hudRef = useRef<HTMLElement>(null);
+  const damageVignetteRef = useRef<HTMLDivElement>(null);
+  const previousHealth = useRef(vitals.health);
   const { area, position } = location;
   const insideHouse = area === "house";
   const insideFarm = area === "farm";
   const insideBarn = area === "barn";
   const atHome = position.x === homePosition.x && position.y === homePosition.y;
   const atFarm = position.x === farmPosition.x && position.y === farmPosition.y;
+
+  useEffect(() => {
+    const tookDamage = vitals.health < previousHealth.current;
+    previousHealth.current = vitals.health;
+    const vignette = damageVignetteRef.current;
+    if (!tookDamage || !vignette?.animate) return;
+
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const flash = vignette.animate(
+      [{ opacity: 0 }, { opacity: reducedMotion ? 0.55 : 0.8, offset: 0.2 }, { opacity: 0 }],
+      { duration: 340, easing: "ease-out" },
+    );
+    const shake = reducedMotion ? undefined : hudRef.current?.animate(
+      [
+        { transform: "translate(0, 0)" },
+        { transform: "translate(-2px, 1px)" },
+        { transform: "translate(2px, -1px)" },
+        { transform: "translate(-1px, 0)" },
+        { transform: "translate(0, 0)" },
+      ],
+      { duration: 180 },
+    );
+
+    return () => {
+      flash.cancel();
+      shake?.cancel();
+    };
+  }, [vitals.health]);
 
   async function enterHome(event: MouseEvent<HTMLButtonElement>) {
     if (enteringHome) return;
@@ -110,20 +164,20 @@ export function PlayerHud({
   );
 
   return (
-    <section className="player-hud" aria-labelledby="player-title" inert={enteringHome}>
+    <section className="player-hud" ref={hudRef} aria-labelledby="player-title" inert={enteringHome}>
       <h1 id="player-title" className="sr-only" ref={headingRef} tabIndex={-1}>
         {{ map: "Player", house: "House", farm: "Farm", barn: "Barn" }[area]}
       </h1>
 
       <div className="hud-top">
         <div className="player-vitals" role="group" aria-label="Player status">
-          {playerVitals.map(({ name, color, value }) => (
-            <label className="player-vital" data-vital={color} key={name}>
+          {playerVitals.map(({ name, key }) => (
+            <label className="player-vital" data-vital={key} key={key}>
               <span className="vital-label">
                 {name}
-                <span aria-hidden="true">{value}%</span>
+                <span aria-hidden="true">{vitals[key]}%</span>
               </span>
-              <meter min={0} max={100} value={value} />
+              <meter min={0} max={100} value={vitals[key]} />
             </label>
           ))}
         </div>
@@ -170,39 +224,15 @@ export function PlayerHud({
           <nav className="map-navigation" aria-label="Map movement">
             {directions.map(({ direction, delta }) => {
               if (direction === "north" && atHome) {
-                return (
-                  <div key={direction} className="map-place-north">
-                    <button
-                      className="map-place"
-                      type="button"
-                      aria-describedby={enteringHome ? undefined : "home-tooltip"}
-                      onClick={enterHome}
-                    >
-                      Home
-                    </button>
-                    {!enteringHome && (
-                      <span id="home-tooltip" className="map-home-tooltip" role="tooltip">
-                        Go inside?
-                      </span>
-                    )}
-                  </div>
-                );
+                return <PlaceEntrance key={direction} name="Home" side={direction} onEnter={enterHome} entering={enteringHome} />;
               }
 
               if (direction === "north" && atFarm) {
-                return (
-                  <div key={direction} className="map-place-north">
-                    <button className="map-place" type="button" onClick={onEnterBarn}>Barn</button>
-                  </div>
-                );
+                return <PlaceEntrance key={direction} name="Barn" side={direction} onEnter={onEnterBarn} />;
               }
 
               if (direction === "west" && atFarm) {
-                return (
-                  <button key={direction} className="map-place map-farm" type="button" onClick={onEnterFarm}>
-                    Farm
-                  </button>
-                );
+                return <PlaceEntrance key={direction} name="Farm" side={direction} onEnter={onEnterFarm} />;
               }
 
               return (
@@ -252,6 +282,7 @@ export function PlayerHud({
         </section>
       </div>
       <div ref={houseVeilRef} className="house-entry-veil" aria-hidden="true" />
+      <div ref={damageVignetteRef} className="damage-vignette" aria-hidden="true" />
     </section>
   );
 }
